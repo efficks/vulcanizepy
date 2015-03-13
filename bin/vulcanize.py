@@ -69,6 +69,8 @@ def getArguments():
 	parser.add_argument("inputfiles", metavar="HTMLFILE", nargs=1, help="HTML file to process")
 	parser.add_argument("-o", "--output", metavar="OUTPUT", nargs="?", help="Path to the output file. Standard output if not used")
 	parser.add_argument("-s", "--strip", action="store_true", help="Remove comments and empty text nodes")
+	parser.add_argument("-p", "--path", metavar="PATH", action="append", help="Path to search for relative path in import tag")
+	parser.add_argument("-M", "--dependencies", action="store_true", help="Instead of outputting the vulcanized data, output relative path to imported document splitted by a new line")
 	
 	args = parser.parse_args()
 	return args
