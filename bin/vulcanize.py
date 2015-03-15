@@ -8,15 +8,53 @@ import argparse
 import re
 from HTMLParser import HTMLParser
 
+class Dependencies(HTMLParser):
+	def __init__(self, output, path):
+		HTMLParser.__init__(self)
+		self.__output = output
+		self.__path = path
+
+	def __handleLink(self, href):
+		linkPath = os.path.normpath(os.path.join(self.__currentFileDir, href))
+		if not os.path.exists(linkPath):
+			for basePath in self.__path:
+				linkPath = os.path.normpath(os.path.join(basePath, href))
+				if os.path.exists(linkPath):
+					break
+		if not os.path.exists(linkPath):
+			raise Exception("%s not found" % href)
+		self.__output.write("%s\n" % linkPath)
+		dep = Dependencies(self.__output, self.__path)
+		dep.process(linkPath)
+		
+	def __handle_genericstart(self, tag, attrs):
+		if tag == "link":
+			a = dict(attrs)
+			if a["rel"] == "import" and "href" in a:
+				self.__handleLink(a["href"])
+
+	def handle_starttag(self, tag, attrs):
+		self.__handle_genericstart(tag, attrs)
+
+	def handle_startendtag(self, tag, attrs):
+		self.__handle_genericstart(tag, attrs)
+
+	def process(self, documentPath):
+		self.__currentFileDir = os.path.dirname(documentPath)
+		with codecs.open(documentPath, encoding='utf-8', mode="r") as fh:
+			# TODO: Read the file content by chunk to prevent memory consumption
+			content = fh.read()
+			self.feed(content)
+
 class Vulcanizer(HTMLParser):
 	def __init__(self, output, strip, path):
 		HTMLParser.__init__(self)
 		self.__strip = strip
 		self.__output = output
-		self.__linkedData = u""
 		self.__path = path
 		self.__currentFileDir = None
 		self.__inscript = False
+		self.__instyle = False
 
 	def process(self, documentPath):
 		self.__currentFileDir = os.path.dirname(documentPath)
@@ -27,6 +65,13 @@ class Vulcanizer(HTMLParser):
 	
 	def __handleLink(self, href):
 		linkPath = os.path.normpath(os.path.join(self.__currentFileDir, href))
+		if not os.path.exists(linkPath):
+			for basePath in self.__path:
+				linkPath = os.path.normpath(os.path.join(basePath, href))
+				if os.path.exists(linkPath):
+					break
+		if not os.path.exists(linkPath):
+			raise Exception("%s not found" % href)
 		vulcanizer = Vulcanizer(self.__output, self.__strip, self.__path)
 		vulcanizer.process(linkPath)
 	
@@ -51,6 +96,8 @@ class Vulcanizer(HTMLParser):
 			self.__output.write(">")
 		if tag == "script":
 			self.__inscript = True
+		elif tag == "style":
+			self.__instyle = True
 	
 	def handle_endtag(self, tag):
 		if tag == "link":
@@ -59,6 +106,8 @@ class Vulcanizer(HTMLParser):
 			self.__output.write("</%s>" % tag)
 		if tag == "script":
 			self.__inscript = False
+		elif tag == "style":
+			self.__instyle = False
 	
 	def handle_startendtag(self, tag, attrs):
 		if self.__handle_genericstart(tag, attrs):
@@ -66,10 +115,12 @@ class Vulcanizer(HTMLParser):
 	
 	def handle_data(self, data):
 		if self.__strip:
-			if self.__inscript:
-				data = data.replace("\n","")
-				data = data.replace("\r","")
+			if self.__inscript or self.__instyle:
+				#data = data.replace("\n","")
+				#data = data.replace("\r","")
+				data = re.sub("[\r\n \t]+", "", data)
 				data = re.sub("/\*.*\*/", "", data)
+			if self.__inscript:
 				data = re.sub(" +(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", "", data)
 				data = re.sub("\t+(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", "", data)
 			self.__output.write("%s" % data.strip())
@@ -120,8 +171,12 @@ def main():
 		output = sys.stdout
 	
 	for inputFile in args.inputfiles:
-		vulcanizer = Vulcanizer(output, args.strip, args.path)
-		vulcanizer.process(inputFile)
+		if args.dependencies:
+			dep = Dependencies(output, args.path)
+			dep.process(inputFile)
+		else:
+			vulcanizer = Vulcanizer(output, args.strip, args.path)
+			vulcanizer.process(inputFile)
 
 if __name__ == "__main__":
 	main()
